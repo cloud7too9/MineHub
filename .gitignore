@@ -1,0 +1,6 @@
+node_modules/
+public/
+bedrock-samples/
+minecraft-data/
+*.log
+.DS_Store

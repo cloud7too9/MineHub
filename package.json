@@ -1,0 +1,15 @@
+{
+  "name": "minehub-bedrock-catalog",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.3.0"
+  },
+  "bin": {
+    "build-bedrock-catalog": "./build-bedrock-catalog.mjs"
+  },
+  "scripts": {
+    "build": "node build-bedrock-catalog.mjs"
+  }
+}
