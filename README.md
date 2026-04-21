@@ -65,15 +65,13 @@ Remove-Item -Recurse -Force bedrock-samples, minecraft-data
 
 ```
 <out>/
-├── catalog.json     ← combined { meta, counts, items[], blocks[] }
-├── items.json       ← items[] only
-├── blocks.json      ← blocks[] only
+├── bedrock-catalog.json   ← combined { meta, counts, byCategory, items[], blocks[] }
 └── textures/
     ├── items/<name>.png
     └── blocks/<name>.png
 ```
 
-`catalog.json` shape:
+`bedrock-catalog.json` shape:
 
 ```jsonc
 {
@@ -86,15 +84,60 @@ Remove-Item -Recurse -Force bedrock-samples, minecraft-data
     "blocks": 800,
     "texturesCopied": 1900,
     "missingTextures":     { "items": 12, "blocks": 3 },
-    "missingTranslations": { "items":  4, "blocks": 1 }
+    "missingTranslations": { "items":  4, "blocks": 1 },
+    "byCategory": { "decoration": 240, "wood": 180, "stone": 160, "misc": 34 }
   },
-  "items":  [ { "id": 311, "name": "diamond_sword", "displayName": "Diamantschwert", "stackSize": 1, "texture": "textures/items/diamond_sword.png" }, ... ],
-  "blocks": [ { "id":   1, "name": "stone",         "displayName": "Stein",          "stackSize": 64, "hardness": 1.5, "texture": "textures/blocks/stone.png" }, ... ]
+  "items":  [ { "id": 311, "name": "diamond_sword", "displayName": "Diamantschwert", "category": "weapon", "stackSize": 1, "textures": "textures/items/diamond_sword.png" }, ... ],
+  "blocks": [ { "id":   1, "name": "stone",         "displayName": "Stein",          "category": "stone",  "stackSize": 64, "hardness": 1.5, "textures": "textures/blocks/stone.png" }, ... ]
 }
 ```
 
 Texture paths are `out`-relative — drop `<out>/` behind any HTTP root and they
 resolve correctly.
+
+## Display names & fallbacks
+
+Translations come from `<samples>/resource_pack/texts/<lang>.lang`. Mojang's
+keys are historically inconsistent, so the lookup walks the following list
+(first hit wins):
+
+```
+item.<name>.name       | tile.<name>.name
+item.<bare>.name       | tile.<bare>.name
+item.minecraft:<bare>… | tile.minecraft:<bare>…
+tile.<bare>.<bare>.name  ← double-name variant (tile.stone.stone.name)
+block.minecraft.<bare>.name
+item.minecraft.<bare>.name
+block.<bare>.name
+item.<bare> / tile.<bare> (no .name suffix)
+```
+
+If nothing matches, the entry falls back to the English `displayName` from
+minecraft-data — never to `null`.
+
+## Categories
+
+Each entry carries a `category` string assigned by ~80 heuristic regex rules
+(see `CATEGORY_RULES` in the script). Rules are evaluated in priority order;
+entries that escape every rule land in **`misc`**.
+
+Known categories: `technical` · `spawn_egg` · `music_disc` · `potion` ·
+`armor` · `weapon` · `tool` · `transport` · `food` · `dye` · `crop` ·
+`redstone` · `utility` · `bed` · `shulker` · `mob_head` · `decoration` ·
+`wool` · `glass` · `concrete` · `plant` · `mineral` · `ore` · `wood` ·
+`stone` · `natural` · `egg` · `mob_drop` · `misc`.
+
+The per-category breakdown is printed at the end of each run — watch the
+`misc` bucket; if useful items slip through, add a rule.
+
+### Frontend filter idiom
+
+The catalog is deliberately unfiltered. For a build planner UI you'll
+typically want to hide non-placeable technical entries:
+
+```js
+blocks.filter(b => b.textures && b.category !== 'technical')
+```
 
 ## Notes
 

@@ -14,11 +14,16 @@
 //     --lang    de_DE
 //
 // Produces under <out>/:
-//   catalog.json         { version, language, counts, items[], blocks[] }
-//   items.json           items[] only
-//   blocks.json          blocks[] only
+//   bedrock-catalog.json    { meta, counts, byCategory, items[], blocks[] }
 //   textures/items/*.png
 //   textures/blocks/*.png
+//
+// Each item/block entry carries:
+//   { id, name, displayName, category, stackSize, textures, ... }
+//
+// `category` is assigned by a heuristic (see CATEGORY_RULES below). Entries
+// that don't match any rule land in `misc` — check that count after the first
+// run and extend the rule list if useful things slip through.
 
 import { parseArgs } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -273,15 +278,96 @@ function lookupTexture(textureMap, name) {
   return textureMap.get(name) ?? textureMap.get(bare) ?? null;
 }
 
-function lookupTranslation(lang, kinds, name) {
+function lookupTranslation(lang, name) {
   const bare = stripNs(name);
-  for (const kind of kinds) {
-    for (const variant of [name, bare, `minecraft:${bare}`]) {
-      const v = lang.get(`${kind}.${variant}.name`);
-      if (v) return v;
-    }
+  const ns = `minecraft:${bare}`;
+  // Mojang's .lang keys are historically inconsistent. Try the common patterns
+  // in descending order of specificity. First hit wins.
+  const candidates = [
+    // Classic "<kind>.<name>.name"
+    `item.${name}.name`,
+    `item.${bare}.name`,
+    `item.${ns}.name`,
+    `tile.${name}.name`,
+    `tile.${bare}.name`,
+    `tile.${ns}.name`,
+    // Double-name variant used for some blocks (e.g. tile.stone.stone.name)
+    `tile.${bare}.${bare}.name`,
+    `item.${bare}.${bare}.name`,
+    // Modern "block.minecraft.<name>.name" / "item.minecraft.<name>.name"
+    `block.minecraft.${bare}.name`,
+    `item.minecraft.${bare}.name`,
+    `block.${bare}.name`,
+    // Some keys omit the .name suffix
+    `item.${bare}`,
+    `tile.${bare}`,
+    `block.minecraft.${bare}`,
+    `item.minecraft.${bare}`,
+  ];
+  for (const k of candidates) {
+    const v = lang.get(k);
+    if (v) return v;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Category classifier
+//
+// Heuristic, ordered rules. First match wins, so the list is sorted from the
+// most-specific (technical hides, spawn eggs, music discs) to the most
+// generic (plants, natural stone, wood). Items/blocks that escape every rule
+// land in `misc` — keep an eye on that bucket size after each run.
+
+const CATEGORY_RULES = [
+  ['technical', [
+    /^air$/, /^cave_air$/, /^void_air$/,
+    /portal$/, /_portal$/,
+    /^barrier$/, /^deny$/, /^allow$/, /^border_block$/,
+    /command_block$/, /^chain_command_block$/, /^repeating_command_block$/,
+    /^structure_block$/, /^structure_void$/, /^jigsaw$/,
+    /^light$/, /^light_block/,
+    /^moving_piston$/, /^piston_arm_collision$/, /^sticky_piston_arm_collision$/,
+    /^flowing_/, /^invisible_bedrock$/,
+    /^info_update/, /^reserved\d*$/, /^unknown$/,
+    /^client_request_placeholder_block$/, /^camera$/, /^debug_stick$/,
+    /^standing_(sign|banner)$/, /^wall_sign$/, /^wall_banner$/,
+  ]],
+  ['spawn_egg',   [/spawn_egg$/]],
+  ['music_disc',  [/^music_disc_/, /^record_/, /^disc_fragment/]],
+  ['potion',      [/^potion$/, /^splash_potion$/, /^lingering_potion$/, /^experience_bottle$/, /^glass_bottle$/, /^dragon_breath$/]],
+  ['armor',       [/_helmet$/, /_chestplate$/, /_leggings$/, /_boots$/, /^shield$/, /^elytra$/, /^turtle_helmet$/]],
+  ['weapon',      [/_sword$/, /^bow$/, /^crossbow$/, /^trident$/, /_arrow$/, /^arrow$/, /^firework_rocket$/]],
+  ['tool',        [/_pickaxe$/, /_shovel$/, /_axe$/, /_hoe$/, /^shears$/, /^flint_and_steel$/, /^fishing_rod$/, /^compass$/, /^recovery_compass$/, /^clock$/, /_map$/, /^empty_map$/, /^map$/, /^spyglass$/, /_bucket$/, /^bucket$/, /^brush$/, /^lead$/, /^name_tag$/, /^goat_horn$/, /^totem_of_undying$/]],
+  ['transport',   [/^boat$/, /_boat$/, /^chest_boat$/, /_minecart$/, /^minecart$/, /_rail$/, /^rail$/, /^saddle$/, /_horse_armor$/, /^horse_armor$/, /^carrot_on_a_stick$/, /^warped_fungus_on_a_stick$/]],
+  ['food',        [/^apple$/, /^bread$/, /^beef$/, /^porkchop$/, /^chicken$/, /^mutton$/, /^rabbit$/, /^cod$/, /^salmon$/, /^tropical_fish$/, /^pufferfish$/, /^cooked_/, /^baked_/, /^rotten_flesh$/, /^spider_eye$/, /^golden_apple$/, /^enchanted_golden_apple$/, /^golden_carrot$/, /^dried_kelp$/, /^honey_bottle$/, /^milk_bucket$/, /_stew$/, /^stew$/, /_soup$/, /^cake$/, /^cookie$/, /^pumpkin_pie$/, /^sweet_berries$/, /^glow_berries$/, /^chorus_fruit$/, /^popped_chorus_fruit$/, /^melon_slice$/, /^carrot$/, /^potato$/, /^baked_potato$/, /^poisonous_potato$/, /^beetroot$/, /^wheat$/, /^sugar$/]],
+  ['dye',         [/_dye$/, /^ink_sac$/, /^glow_ink_sac$/, /^bone_meal$/, /^cocoa_beans$/, /^lapis_lazuli$/]],
+  ['crop',        [/_seeds$/, /^wheat_seeds$/]],
+  ['redstone',    [/^redstone$/, /^redstone_block$/, /^redstone_wire$/, /^redstone_torch$/, /^redstone_lamp$/, /^piston$/, /^sticky_piston$/, /^dropper$/, /^dispenser$/, /^hopper$/, /^repeater$/, /^comparator$/, /^observer$/, /^lever$/, /_button$/, /^button$/, /_pressure_plate$/, /^daylight_detector$/, /^tnt$/, /^target$/, /^note_block$/, /^tripwire_hook$/, /^string$/, /^activator_rail$/, /^detector_rail$/, /^powered_rail$/]],
+  ['utility',     [/^crafting_table$/, /^furnace$/, /^blast_furnace$/, /^smoker$/, /^anvil$/, /_anvil$/, /^enchanting_table$/, /^brewing_stand$/, /^cauldron$/, /_cauldron$/, /^beacon$/, /^grindstone$/, /^loom$/, /^stonecutter(_block)?$/, /^cartography_table$/, /^fletching_table$/, /^smithing_table$/, /^barrel$/, /^chest$/, /^ender_chest$/, /^trapped_chest$/, /^lectern$/, /^bell$/, /^composter$/, /^bookshelf$/, /^chiseled_bookshelf$/, /^jukebox$/, /^respawn_anchor$/, /^lodestone$/, /^conduit$/, /^end_portal_frame$/, /^decorated_pot$/, /^crafter$/]],
+  ['bed',         [/_bed$/]],
+  ['shulker',     [/^shulker_box$/, /_shulker_box$/, /^shulker_shell$/]],
+  ['mob_head',    [/_skull$/, /^skull$/, /_head$/]],
+  ['decoration',  [/^torch$/, /^soul_torch$/, /^lantern$/, /^soul_lantern$/, /^chain$/, /_banner$/, /^banner$/, /_sign$/, /^sign$/, /_hanging_sign$/, /^flower_pot$/, /_candle$/, /^candle$/, /^amethyst_block$/, /^amethyst_cluster$/, /_amethyst_bud$/, /^budding_amethyst$/, /^sculk$/, /^sculk_vein$/, /^sculk_sensor$/, /^sculk_shrieker$/, /^sculk_catalyst$/, /^end_rod$/, /^lightning_rod$/, /^item_frame$/, /^glow_item_frame$/, /_painting$/, /^painting$/, /_carpet$/, /^carpet$/, /^snow_layer$/, /^cobweb$/, /^armor_stand$/]],
+  ['wool',        [/_wool$/, /^wool$/]],
+  ['glass',       [/_glass$/, /_glass_pane$/, /^glass$/, /^glass_pane$/, /^tinted_glass$/]],
+  ['concrete',    [/_concrete$/, /_concrete_powder$/, /_terracotta$/, /^terracotta$/, /_glazed_terracotta$/]],
+  ['plant',       [/_sapling$/, /^sapling$/, /_leaves$/, /^leaves$/, /^dandelion$/, /^poppy$/, /_tulip$/, /^blue_orchid$/, /^allium$/, /^azure_bluet$/, /^oxeye_daisy$/, /^cornflower$/, /^lily_of_the_valley$/, /^sunflower$/, /^lilac$/, /^peony$/, /^rose_bush$/, /^wither_rose$/, /^tall_grass$/, /^short_grass$/, /^grass$/, /^fern$/, /^large_fern$/, /^seagrass$/, /^tall_seagrass$/, /^kelp/, /^sugar_cane$/, /^bamboo/, /_vine$/, /^vine$/, /^cactus$/, /^dead_bush$/, /^lily_pad$/, /^sweet_berry_bush$/, /^nether_sprouts$/, /_roots$/, /_fungus$/, /^big_dripleaf$/, /^small_dripleaf$/, /^azalea$/, /^flowering_azalea$/, /^moss_carpet$/, /^pale_moss_carpet$/, /^moss_block$/, /^hanging_roots$/, /^spore_blossom$/, /^mangrove_propagule$/, /^pink_petals$/, /^pitcher_plant$/, /^torchflower$/, /^torchflower_crop$/, /^pitcher_crop$/]],
+  ['mineral',     [/_ingot$/, /_nugget$/, /^diamond$/, /^emerald$/, /^quartz$/, /^nether_quartz$/, /^coal$/, /^charcoal$/, /^raw_iron$/, /^raw_gold$/, /^raw_copper$/, /^netherite_scrap$/, /^amethyst_shard$/, /^prismarine_(crystals|shard)$/, /^nautilus_shell$/, /^heart_of_the_sea$/, /^echo_shard$/, /^disc_fragment_5$/]],
+  ['ore',         [/_ore$/]],
+  ['wood',        [/_log$/, /^log$/, /_wood$/, /^wood$/, /_planks$/, /^planks$/, /_fence$/, /^fence$/, /_fence_gate$/, /_door$/, /^door$/, /_trapdoor$/, /^trapdoor$/, /_slab$/, /^slab$/, /_stairs$/, /^stairs$/, /^stripped_/, /_button$/, /_pressure_plate$/]],
+  ['stone',       [/^stone$/, /^cobblestone/, /^mossy_cobblestone/, /^andesite/, /^diorite/, /^granite/, /^basalt/, /^polished_basalt$/, /^smooth_basalt$/, /^blackstone/, /^deepslate/, /^tuff/, /^calcite$/, /^dripstone_block$/, /^pointed_dripstone$/, /_bricks$/, /_brick$/, /^bedrock$/, /^end_stone/, /^netherrack$/, /^nether_bricks$/, /^red_nether_bricks$/, /^soul_soil$/, /^soul_sand$/, /^magma(_block)?$/, /^obsidian$/, /^crying_obsidian$/, /^glowstone$/, /^shroomlight$/, /^sea_lantern$/, /^prismarine/, /^purpur/]],
+  ['natural',     [/^dirt$/, /_dirt$/, /^grass_block$/, /^mycelium$/, /^podzol$/, /^sand$/, /^red_sand$/, /^gravel$/, /^clay$/, /^mud$/, /^muddy_mangrove_roots$/, /^packed_mud$/, /^mud_bricks$/, /^snow_block$/, /^snow$/, /^ice$/, /^packed_ice$/, /^blue_ice$/, /^frosted_ice$/, /^water$/, /^lava$/, /^coarse_dirt$/, /^rooted_dirt$/, /^sponge$/, /^wet_sponge$/, /^bone_block$/, /^honeycomb(_block)?$/, /^honey_block$/, /^slime_block$/, /^dried_kelp_block$/]],
+  ['egg',         [/^egg$/, /^turtle_egg$/, /^sniffer_egg$/, /^armadillo_scute$/, /^scute$/]],
+  ['mob_drop',    [/^leather$/, /^feather$/, /^gunpowder$/, /^bone$/, /^rabbit_hide$/, /^rabbit_foot$/, /^phantom_membrane$/, /^blaze_rod$/, /^blaze_powder$/, /^ghast_tear$/, /^magma_cream$/, /^slime_ball$/, /^ender_pearl$/, /^ender_eye$/, /^nether_star$/, /^wither_skeleton_skull$/, /^nautilus_shell$/, /^heart_of_the_sea$/, /^copper_ingot$/, /^fire_charge$/]],
+];
+
+function classify(name) {
+  const bare = stripNs(name);
+  for (const [cat, rules] of CATEGORY_RULES) {
+    for (const re of rules) if (re.test(bare)) return cat;
+  }
+  return 'misc';
 }
 
 // ---------------------------------------------------------------------------
@@ -328,35 +414,47 @@ async function build() {
   ]);
 
   const copied = new Set();
+  const categoryCounts = {};
   let texMissItems = 0;
   let texMissBlocks = 0;
   let trMissItems = 0;
   let trMissBlocks = 0;
+
+  async function resolveTexture(name, preferTerrain) {
+    const primary = preferTerrain ? terrainTex : itemTex;
+    const secondary = preferTerrain ? itemTex : terrainTex;
+    const texRel = lookupTexture(primary, name) ?? lookupTexture(secondary, name);
+    if (!texRel) return null;
+    if (COPY) return await copyTexture(texRel, copied);
+    return texRel + '.png';
+  }
+
+  function bumpCategory(cat) {
+    categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+  }
 
   // Items ------------------------------------------------------------------
   const outItems = [];
   for (const it of items) {
     const name = it.name;
     if (!name) continue;
-    const texRel = lookupTexture(itemTex, name) ?? lookupTexture(terrainTex, name);
-    let texturePath = null;
-    if (texRel) {
-      if (COPY) texturePath = await copyTexture(texRel, copied);
-      else texturePath = texRel + '.png';
-    }
-    if (!texturePath) {
+    const textures = await resolveTexture(name, false);
+    if (!textures) {
       texMissItems++;
       warn(`no texture for item: ${name}`);
     }
-    const tr = lookupTranslation(lang, ['item', 'tile'], name);
+    const tr = lookupTranslation(lang, name);
     if (!tr) trMissItems++;
+    const category = classify(name);
+    bumpCategory(category);
     outItems.push({
       id: it.id,
       name,
       displayName: tr ?? it.displayName ?? name,
+      category,
       stackSize: it.stackSize ?? 64,
       maxDurability: it.maxDurability,
-      texture: texturePath,
+      textures,
     });
   }
 
@@ -365,22 +463,20 @@ async function build() {
   for (const b of blocks) {
     const name = b.name;
     if (!name) continue;
-    const texRel = lookupTexture(terrainTex, name) ?? lookupTexture(itemTex, name);
-    let texturePath = null;
-    if (texRel) {
-      if (COPY) texturePath = await copyTexture(texRel, copied);
-      else texturePath = texRel + '.png';
-    }
-    if (!texturePath) {
+    const textures = await resolveTexture(name, true);
+    if (!textures) {
       texMissBlocks++;
       warn(`no texture for block: ${name}`);
     }
-    const tr = lookupTranslation(lang, ['tile', 'item'], name);
+    const tr = lookupTranslation(lang, name);
     if (!tr) trMissBlocks++;
+    const category = classify(name);
+    bumpCategory(category);
     outBlocks.push({
       id: b.id,
       name,
       displayName: tr ?? b.displayName ?? name,
+      category,
       stackSize: b.stackSize ?? 64,
       hardness: b.hardness,
       resistance: b.resistance,
@@ -389,9 +485,13 @@ async function build() {
       emitLight: b.emitLight,
       filterLight: b.filterLight,
       drops: b.drops,
-      texture: texturePath,
+      textures,
     });
   }
+
+  const sortedCategories = Object.fromEntries(
+    Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]),
+  );
 
   // Catalog ----------------------------------------------------------------
   const catalog = {
@@ -412,28 +512,30 @@ async function build() {
       texturesCopied: copied.size,
       missingTextures: { items: texMissItems, blocks: texMissBlocks },
       missingTranslations: { items: trMissItems, blocks: trMissBlocks },
+      byCategory: sortedCategories,
     },
     items: outItems,
     blocks: outBlocks,
   };
 
   const space = PRETTY ? 2 : 0;
-  await Promise.all([
-    fs.writeFile(path.join(OUT, 'catalog.json'), JSON.stringify(catalog, null, space)),
-    fs.writeFile(path.join(OUT, 'items.json'),   JSON.stringify(outItems, null, space)),
-    fs.writeFile(path.join(OUT, 'blocks.json'),  JSON.stringify(outBlocks, null, space)),
-  ]);
+  await fs.writeFile(path.join(OUT, 'bedrock-catalog.json'), JSON.stringify(catalog, null, space));
 
   // Hash for cache-busting / integrity.
   const hash = createHash('sha256').update(JSON.stringify(catalog)).digest('hex').slice(0, 16);
 
   info('');
-  info(`catalog written to ${OUT}`);
+  info(`catalog written to ${OUT}/bedrock-catalog.json`);
   info(`  bedrock ${VERSION} / lang ${LANG}`);
   info(`  items   : ${outItems.length} (texture missing: ${texMissItems}, translation missing: ${trMissItems})`);
   info(`  blocks  : ${outBlocks.length} (texture missing: ${texMissBlocks}, translation missing: ${trMissBlocks})`);
   info(`  textures: ${copied.size} files copied`);
   info(`  digest  : ${hash}`);
+  info(`  categories:`);
+  for (const [cat, n] of Object.entries(sortedCategories)) {
+    const tag = cat === 'misc' ? ' ← check this bucket' : '';
+    info(`    ${cat.padEnd(12)} ${String(n).padStart(5)}${tag}`);
+  }
   if (warnings.length && QUIET) info(`  warnings: ${warnings.length} (suppressed; rerun without --quiet to see)`);
 }
 
