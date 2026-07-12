@@ -14,9 +14,13 @@
 //     --lang    de_DE
 //
 // Produces under <out>/:
-//   bedrock-catalog.json    { meta, counts, byCategory, items[], blocks[] }
+//   bedrock-catalog-items.json   { meta, counts, byCategory, items[] }
+//   bedrock-catalog-blocks.json  { meta, counts, byCategory, blocks[] }
 //   textures/items/*.png
 //   textures/blocks/*.png
+//
+// Items and blocks are independent outputs (see --only) so a build can be
+// restricted to just one of them, e.g. when disk/time is constrained.
 //
 // Each item/block entry carries:
 //   { id, name, displayName, category, stackSize, textures, ... }
@@ -51,6 +55,8 @@ Required:
 Optional:
   --lang    <code>  Language code for displayName lookups, default en_US.
                     Resolves to <samples>/resource_pack/texts/<code>.lang.
+  --only    <kind>  Build only "items" or only "blocks" (default: both).
+                    Useful for a fast/forced partial build.
   --pretty          Pretty-print JSON output (default: minified).
   --no-textures     Skip copying PNG files (write JSON only).
   --quiet           Suppress per-warning lines (still prints final summary).
@@ -67,6 +73,7 @@ try {
       version:     { type: 'string' },
       out:         { type: 'string' },
       lang:        { type: 'string', default: 'en_US' },
+      only:        { type: 'string' },
       pretty:      { type: 'boolean', default: false },
       'no-textures': { type: 'boolean', default: false },
       quiet:       { type: 'boolean', default: false },
@@ -95,6 +102,12 @@ if (missing.length) {
   process.exit(2);
 }
 
+if (opts.only && opts.only !== 'items' && opts.only !== 'blocks') {
+  process.stderr.write(`error: --only must be "items" or "blocks", got "${opts.only}"\n\n`);
+  printHelp();
+  process.exit(2);
+}
+
 const SAMPLES = path.resolve(opts.samples);
 const DATA    = path.resolve(opts.data);
 const OUT     = path.resolve(opts.out);
@@ -103,6 +116,8 @@ const LANG    = opts.lang;
 const PRETTY  = opts.pretty;
 const COPY    = !opts['no-textures'];
 const QUIET   = opts.quiet;
+const BUILD_ITEMS  = opts.only !== 'blocks';
+const BUILD_BLOCKS = opts.only !== 'items';
 
 const RP = path.join(SAMPLES, 'resource_pack');
 
@@ -230,6 +245,46 @@ async function loadTextureIndex(jsonRelPath) {
 }
 
 // ---------------------------------------------------------------------------
+// resource_pack/blocks.json loader
+//
+// terrain_texture.json is keyed by per-face texture names (e.g. "oak_log_top",
+// "dispenser_front_horizontal"), not by block name — most blocks have no
+// terrain_texture.json entry matching their own name. The resource pack's
+// blocks.json is the actual name -> texture-key index Mojang's client uses
+// (`"oak_log": { "textures": { "up": "oak_log_top", "side": "oak_log_side" } }`
+// or the simpler `"stone": { "textures": "stone" }`). We resolve through it as
+// a fallback so block (and block-item) texture lookups by name succeed.
+
+const FACE_PRIORITY = ['up', 'side', 'north', 'east', 'south', 'west', 'down'];
+
+async function loadBlockDefs() {
+  const p = path.join(RP, 'blocks.json');
+  if (!(await exists(p))) {
+    warn(`blocks.json missing: ${p} (block texture fallback disabled)`);
+    return new Map();
+  }
+  const data = await readJson(p);
+  const out = new Map();
+  for (const [key, val] of Object.entries(data)) {
+    const t = val?.textures;
+    let texKey = null;
+    if (typeof t === 'string') {
+      texKey = t;
+    } else if (t && typeof t === 'object') {
+      for (const face of FACE_PRIORITY) {
+        if (typeof t[face] === 'string') { texKey = t[face]; break; }
+      }
+      if (!texKey) {
+        const first = Object.values(t).find((v) => typeof v === 'string');
+        if (first) texKey = first;
+      }
+    }
+    if (texKey) out.set(stripNs(key), texKey);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // .lang loader
 //
 // Bedrock .lang files are roughly:
@@ -278,7 +333,34 @@ function lookupTexture(textureMap, name) {
   return textureMap.get(name) ?? textureMap.get(bare) ?? null;
 }
 
-function lookupTranslation(lang, name) {
+// Reconstructs pre-1.13-flattening "<kind>.<variant>.name" translation keys
+// (e.g. "tile.log.oak.name", "tile.wool.white.name") into modern
+// "<variant>_<kind>" / "<kind>_<variant>" name lookups (e.g. "oak_log",
+// "white_wool"). A lot of legacy block/item families were never re-keyed in
+// the .lang file after the name flattening, so a direct "tile.<name>.name"
+// lookup misses them entirely. A few kinds were renamed outright; alias them
+// too. Built once per lang file, not guessed per-item.
+const LEGACY_KIND_ALIASES = {
+  stained_hardened_clay: 'terracotta',
+  standing_banner: 'banner',
+};
+
+function buildLegacyIndex(lang) {
+  const index = new Map();
+  const re = /^(?:tile|item)\.([a-z0-9_]+)\.([a-z0-9_]+)\.name$/;
+  for (const [key, value] of lang) {
+    const m = re.exec(key);
+    if (!m) continue;
+    const [, kind, variant] = m;
+    for (const k of new Set([kind, LEGACY_KIND_ALIASES[kind]].filter(Boolean))) {
+      if (!index.has(`${variant}_${k}`)) index.set(`${variant}_${k}`, value);
+      if (!index.has(`${k}_${variant}`)) index.set(`${k}_${variant}`, value);
+    }
+  }
+  return index;
+}
+
+function lookupTranslation(lang, legacyIndex, name) {
   const bare = stripNs(name);
   const ns = `minecraft:${bare}`;
   // Mojang's .lang keys are historically inconsistent. Try the common patterns
@@ -308,7 +390,7 @@ function lookupTranslation(lang, name) {
     const v = lang.get(k);
     if (v) return v;
   }
-  return null;
+  return legacyIndex.get(bare) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,22 +463,28 @@ function classify(name) {
 
 const COPY_EXTS = ['.png', '.tga', '.jpg', '.jpeg'];
 
-async function copyTexture(textureRel, copiedSet) {
-  // Normalize to forward-slash, resource-pack-relative.
+// Some texture_data / blocks.json entries reference a base path with no file
+// behind it on disk (e.g. all `*_candle_cake` terrain entries point at
+// "textures/blocks/cake", but only cake_top/cake_side/cake_bottom/... exist).
+// Resolve to the extension that's actually present so callers can tell a
+// broken reference from a real hit and fall back to another candidate.
+async function findExistingTexture(textureRel) {
   const rel = textureRel.replace(/\\/g, '/').replace(/^\.\//, '');
   for (const ext of COPY_EXTS) {
-    const src = path.join(RP, rel + ext);
-    if (!(await exists(src))) continue;
-    const dstRel = rel + ext;
-    if (!copiedSet.has(dstRel)) {
-      const dst = path.join(OUT, dstRel);
-      await fs.mkdir(path.dirname(dst), { recursive: true });
-      await fs.copyFile(src, dst);
-      copiedSet.add(dstRel);
-    }
-    return dstRel;
+    if (await exists(path.join(RP, rel + ext))) return rel + ext;
   }
   return null;
+}
+
+async function copyTexture(resolvedRel, copiedSet) {
+  if (!copiedSet.has(resolvedRel)) {
+    const src = path.join(RP, resolvedRel);
+    const dst = path.join(OUT, resolvedRel);
+    await fs.mkdir(path.dirname(dst), { recursive: true });
+    await fs.copyFile(src, dst);
+    copiedSet.add(resolvedRel);
+  }
+  return resolvedRel;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,95 +494,103 @@ async function build() {
   await validateSources();
   await fs.mkdir(OUT, { recursive: true });
 
-  const [{ items, blocks, itemsPath, blocksPath }, itemTex, terrainTex, lang] = await Promise.all([
+  const [{ items, blocks, itemsPath, blocksPath }, itemTex, terrainTex, blockDefs, lang] = await Promise.all([
     loadMcData(),
     loadTextureIndex('textures/item_texture.json'),
     loadTextureIndex('textures/terrain_texture.json'),
+    loadBlockDefs(),
     loadLang(LANG),
   ]);
+  const legacyIndex = buildLegacyIndex(lang);
 
   const copied = new Set();
-  const categoryCounts = {};
-  let texMissItems = 0;
-  let texMissBlocks = 0;
-  let trMissItems = 0;
-  let trMissBlocks = 0;
 
   async function resolveTexture(name, preferTerrain) {
     const primary = preferTerrain ? terrainTex : itemTex;
     const secondary = preferTerrain ? itemTex : terrainTex;
-    const texRel = lookupTexture(primary, name) ?? lookupTexture(secondary, name);
-    if (!texRel) return null;
-    if (COPY) return await copyTexture(texRel, copied);
-    return texRel + '.png';
-  }
-
-  function bumpCategory(cat) {
-    categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
-  }
-
-  // Items ------------------------------------------------------------------
-  const outItems = [];
-  for (const it of items) {
-    const name = it.name;
-    if (!name) continue;
-    const textures = await resolveTexture(name, false);
-    if (!textures) {
-      texMissItems++;
-      warn(`no texture for item: ${name}`);
+    const candidates = [];
+    const direct = lookupTexture(primary, name) ?? lookupTexture(secondary, name);
+    if (direct) candidates.push(direct);
+    // Not directly keyed (true for most multi-face blocks and for items that
+    // are really block placements) — resolve the block's real texture key via
+    // resource_pack/blocks.json and try that too.
+    const blockKey = blockDefs.get(stripNs(name));
+    if (blockKey) {
+      const viaBlock = lookupTexture(terrainTex, blockKey) ?? lookupTexture(itemTex, blockKey);
+      if (viaBlock) candidates.push(viaBlock);
     }
-    const tr = lookupTranslation(lang, name);
-    if (!tr) trMissItems++;
-    const category = classify(name);
-    bumpCategory(category);
-    outItems.push({
-      id: it.id,
-      name,
-      displayName: tr ?? it.displayName ?? name,
-      category,
-      stackSize: it.stackSize ?? 64,
-      maxDurability: it.maxDurability,
-      textures,
-    });
-  }
-
-  // Blocks -----------------------------------------------------------------
-  const outBlocks = [];
-  for (const b of blocks) {
-    const name = b.name;
-    if (!name) continue;
-    const textures = await resolveTexture(name, true);
-    if (!textures) {
-      texMissBlocks++;
-      warn(`no texture for block: ${name}`);
+    for (const candidate of candidates) {
+      // A texture_data/blocks.json entry can reference a path with no file
+      // behind it (e.g. all *_candle_cake entries point at the nonexistent
+      // "textures/blocks/cake") — verify on disk and fall through if dead.
+      const resolved = await findExistingTexture(candidate);
+      if (!resolved) continue;
+      if (COPY) return await copyTexture(resolved, copied);
+      return resolved;
     }
-    const tr = lookupTranslation(lang, name);
-    if (!tr) trMissBlocks++;
-    const category = classify(name);
-    bumpCategory(category);
-    outBlocks.push({
-      id: b.id,
-      name,
-      displayName: tr ?? b.displayName ?? name,
-      category,
-      stackSize: b.stackSize ?? 64,
-      hardness: b.hardness,
-      resistance: b.resistance,
-      diggable: b.diggable,
-      transparent: b.transparent,
-      emitLight: b.emitLight,
-      filterLight: b.filterLight,
-      drops: b.drops,
-      textures,
-    });
+    return null;
   }
 
-  const sortedCategories = Object.fromEntries(
-    Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]),
-  );
+  function buildEntries(source, kind, preferTerrain, mapEntry) {
+    const categoryCounts = {};
+    let texMiss = 0;
+    let trMiss = 0;
+    const out = [];
+    return (async () => {
+      for (const raw of source) {
+        const name = raw.name;
+        if (!name) continue;
+        const textures = await resolveTexture(name, preferTerrain);
+        if (!textures) {
+          texMiss++;
+          warn(`no texture for ${kind}: ${name}`);
+        }
+        const tr = lookupTranslation(lang, legacyIndex, name);
+        if (!tr) trMiss++;
+        const category = classify(name);
+        categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+        out.push(mapEntry(raw, tr, category, textures));
+      }
+      return { entries: out, categoryCounts, texMiss, trMiss };
+    })();
+  }
 
-  // Catalog ----------------------------------------------------------------
-  const catalog = {
+  const itemsResult = BUILD_ITEMS
+    ? await buildEntries(items, 'item', false, (it, tr, category, textures) => ({
+        id: it.id,
+        name: it.name,
+        displayName: tr ?? it.displayName ?? it.name,
+        category,
+        stackSize: it.stackSize ?? 64,
+        maxDurability: it.maxDurability,
+        textures,
+      }))
+    : { entries: [], categoryCounts: {}, texMiss: 0, trMiss: 0 };
+
+  const blocksResult = BUILD_BLOCKS
+    ? await buildEntries(blocks, 'block', true, (b, tr, category, textures) => ({
+        id: b.id,
+        name: b.name,
+        displayName: tr ?? b.displayName ?? b.name,
+        category,
+        stackSize: b.stackSize ?? 64,
+        hardness: b.hardness,
+        resistance: b.resistance,
+        diggable: b.diggable,
+        transparent: b.transparent,
+        emitLight: b.emitLight,
+        filterLight: b.filterLight,
+        drops: b.drops,
+        textures,
+      }))
+    : { entries: [], categoryCounts: {}, texMiss: 0, trMiss: 0 };
+
+  function sortCategories(counts) {
+    return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]));
+  }
+
+  const space = PRETTY ? 2 : 0;
+  const baseMeta = {
     schemaVersion: 1,
     generator: { name: 'build-bedrock-catalog', version: SCRIPT_VERSION },
     bedrockVersion: VERSION,
@@ -506,37 +602,69 @@ async function build() {
       itemsJson: path.relative(DATA, itemsPath),
       blocksJson: path.relative(DATA, blocksPath),
     },
-    counts: {
-      items: outItems.length,
-      blocks: outBlocks.length,
-      texturesCopied: copied.size,
-      missingTextures: { items: texMissItems, blocks: texMissBlocks },
-      missingTranslations: { items: trMissItems, blocks: trMissBlocks },
-      byCategory: sortedCategories,
-    },
-    items: outItems,
-    blocks: outBlocks,
   };
 
-  const space = PRETTY ? 2 : 0;
-  await fs.writeFile(path.join(OUT, 'bedrock-catalog.json'), JSON.stringify(catalog, null, space));
-
-  // Hash for cache-busting / integrity.
-  const hash = createHash('sha256').update(JSON.stringify(catalog)).digest('hex').slice(0, 16);
+  let itemsCopied = 0;
+  let blocksCopied = 0;
+  for (const p of copied) {
+    if (p.startsWith('textures/items/')) itemsCopied++;
+    else if (p.startsWith('textures/blocks/')) blocksCopied++;
+  }
 
   info('');
-  info(`catalog written to ${OUT}/bedrock-catalog.json`);
-  info(`  bedrock ${VERSION} / lang ${LANG}`);
-  info(`  items   : ${outItems.length} (texture missing: ${texMissItems}, translation missing: ${trMissItems})`);
-  info(`  blocks  : ${outBlocks.length} (texture missing: ${texMissBlocks}, translation missing: ${trMissBlocks})`);
-  info(`  textures: ${copied.size} files copied`);
-  info(`  digest  : ${hash}`);
-  info(`  categories:`);
-  for (const [cat, n] of Object.entries(sortedCategories)) {
-    const tag = cat === 'misc' ? ' ← check this bucket' : '';
-    info(`    ${cat.padEnd(12)} ${String(n).padStart(5)}${tag}`);
+  info(`bedrock ${VERSION} / lang ${LANG}`);
+
+  if (BUILD_ITEMS) {
+    const itemsCategories = sortCategories(itemsResult.categoryCounts);
+    const itemsCatalog = {
+      ...baseMeta,
+      kind: 'items',
+      counts: {
+        items: itemsResult.entries.length,
+        texturesCopied: itemsCopied,
+        missingTextures: itemsResult.texMiss,
+        missingTranslations: itemsResult.trMiss,
+        byCategory: itemsCategories,
+      },
+      items: itemsResult.entries,
+    };
+    await fs.writeFile(path.join(OUT, 'bedrock-catalog-items.json'), JSON.stringify(itemsCatalog, null, space));
+    const hash = createHash('sha256').update(JSON.stringify(itemsCatalog)).digest('hex').slice(0, 16);
+    info(`items catalog written to ${OUT}/bedrock-catalog-items.json (digest ${hash})`);
+    info(`  items   : ${itemsResult.entries.length} (texture missing: ${itemsResult.texMiss}, translation missing: ${itemsResult.trMiss})`);
+    info(`  textures: ${itemsCopied} files copied`);
+    for (const [cat, n] of Object.entries(itemsCategories)) {
+      const tag = cat === 'misc' ? ' ← check this bucket' : '';
+      info(`    ${cat.padEnd(12)} ${String(n).padStart(5)}${tag}`);
+    }
   }
-  if (warnings.length && QUIET) info(`  warnings: ${warnings.length} (suppressed; rerun without --quiet to see)`);
+
+  if (BUILD_BLOCKS) {
+    const blocksCategories = sortCategories(blocksResult.categoryCounts);
+    const blocksCatalog = {
+      ...baseMeta,
+      kind: 'blocks',
+      counts: {
+        blocks: blocksResult.entries.length,
+        texturesCopied: blocksCopied,
+        missingTextures: blocksResult.texMiss,
+        missingTranslations: blocksResult.trMiss,
+        byCategory: blocksCategories,
+      },
+      blocks: blocksResult.entries,
+    };
+    await fs.writeFile(path.join(OUT, 'bedrock-catalog-blocks.json'), JSON.stringify(blocksCatalog, null, space));
+    const hash = createHash('sha256').update(JSON.stringify(blocksCatalog)).digest('hex').slice(0, 16);
+    info(`blocks catalog written to ${OUT}/bedrock-catalog-blocks.json (digest ${hash})`);
+    info(`  blocks  : ${blocksResult.entries.length} (texture missing: ${blocksResult.texMiss}, translation missing: ${blocksResult.trMiss})`);
+    info(`  textures: ${blocksCopied} files copied`);
+    for (const [cat, n] of Object.entries(blocksCategories)) {
+      const tag = cat === 'misc' ? ' ← check this bucket' : '';
+      info(`    ${cat.padEnd(12)} ${String(n).padStart(5)}${tag}`);
+    }
+  }
+
+  if (warnings.length && QUIET) info(`\nwarnings: ${warnings.length} (suppressed; rerun without --quiet to see)`);
 }
 
 // ---------------------------------------------------------------------------
