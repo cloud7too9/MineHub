@@ -56,6 +56,7 @@ Remove-Item -Recurse -Force bedrock-samples, minecraft-data
 | `--version`     | yes      | —        | Bedrock version, e.g. `1.21.60`                       |
 | `--out`         | yes      | —        | Output directory (created)                            |
 | `--lang`        | no       | `en_US`  | Language code; resolves `<samples>/resource_pack/texts/<code>.lang` |
+| `--only`        | no       | —        | `items` or `blocks` — build just one kind (e.g. a forced/fast partial build) |
 | `--pretty`      | no       | off      | Pretty-print JSON                                     |
 | `--no-textures` | no       | off      | Skip PNG copy (JSON only)                             |
 | `--quiet`       | no       | off      | Hide per-warning lines                                |
@@ -63,15 +64,25 @@ Remove-Item -Recurse -Force bedrock-samples, minecraft-data
 
 ## Output layout
 
+Items and blocks are independent outputs, so `--only items` / `--only blocks`
+produce just one of the two JSON files below (and only copy that kind's
+textures):
+
 ```
 <out>/
-├── bedrock-catalog.json   ← combined { meta, counts, byCategory, items[], blocks[] }
+├── bedrock-catalog-items.json   ← { meta, counts, byCategory, items[] }
+├── bedrock-catalog-blocks.json  ← { meta, counts, byCategory, blocks[] }
 └── textures/
     ├── items/<name>.png
     └── blocks/<name>.png
 ```
 
-`bedrock-catalog.json` shape:
+(Texture subfolders mirror whatever layout `bedrock-samples` uses internally —
+a handful of block textures, e.g. beds and cakes, physically live under
+`textures/items/` upstream.)
+
+`bedrock-catalog-blocks.json` shape (the items file is the same shape with
+`kind: "items"` and an `items[]` array instead):
 
 ```jsonc
 {
@@ -79,16 +90,15 @@ Remove-Item -Recurse -Force bedrock-samples, minecraft-data
   "bedrockVersion": "1.21.60",
   "language": "de_DE",
   "generatedAt": "2026-04-21T12:00:00.000Z",
+  "kind": "blocks",
   "counts": {
-    "items": 1200,
     "blocks": 800,
-    "texturesCopied": 1900,
-    "missingTextures":     { "items": 12, "blocks": 3 },
-    "missingTranslations": { "items":  4, "blocks": 1 },
+    "texturesCopied": 780,
+    "missingTextures": 3,
+    "missingTranslations": 1,
     "byCategory": { "decoration": 240, "wood": 180, "stone": 160, "misc": 34 }
   },
-  "items":  [ { "id": 311, "name": "diamond_sword", "displayName": "Diamantschwert", "category": "weapon", "stackSize": 1, "textures": "textures/items/diamond_sword.png" }, ... ],
-  "blocks": [ { "id":   1, "name": "stone",         "displayName": "Stein",          "category": "stone",  "stackSize": 64, "hardness": 1.5, "textures": "textures/blocks/stone.png" }, ... ]
+  "blocks": [ { "id": 1, "name": "stone", "displayName": "Stein", "category": "stone", "stackSize": 64, "hardness": 1.5, "textures": "textures/blocks/stone.png" }, ... ]
 }
 ```
 
@@ -112,8 +122,35 @@ block.<bare>.name
 item.<bare> / tile.<bare> (no .name suffix)
 ```
 
+If none of those match, the lookup also checks a **legacy index**: many
+pre-1.13-flattening families (`tile.log.oak.name`, `tile.wool.white.name`, …)
+were never re-keyed after their block/item names were flattened to
+`oak_log` / `white_wool`. The script rebuilds `<variant>_<kind>` /
+`<kind>_<variant>` candidates from every `tile.*.*.name` / `item.*.*.name` key
+in the loaded `.lang` file (plus a couple of outright kind renames, e.g.
+`stained_hardened_clay` → `terracotta`) and checks those too.
+
 If nothing matches, the entry falls back to the English `displayName` from
 minecraft-data — never to `null`.
+
+## Texture resolution
+
+`terrain_texture.json` / `item_texture.json` are keyed by per-face texture
+names (`oak_log_top`, `dispenser_front_horizontal`, …), not by block/item
+name — most blocks have **no** entry matching their own name. The actual
+name → texture-key mapping the game uses lives in
+`<samples>/resource_pack/blocks.json` (e.g. `"oak_log": { "textures": {
+"up": "oak_log_top", "side": "oak_log_side" } }`). The script resolves
+through that file as a fallback (preferring the `up` face, then `side`, then
+whatever's available) whenever a direct name lookup misses — this is what
+fixed the majority of `missingTextures` for common blocks like logs, grass,
+dispensers, and rails.
+
+Because some texture_data entries reference a path with no file behind them
+on disk (every `*_candle_cake` block points at the nonexistent
+`textures/blocks/cake`, for example), every candidate is verified to exist
+on disk before being accepted; a dead reference falls through to the next
+candidate instead of silently failing.
 
 ## Categories
 
