@@ -1,5 +1,4 @@
-node_modules/
-bedrock-samples/
-minecraft-data/
-*.log
+node_modules
+dist
+*.local
 .DS_Store

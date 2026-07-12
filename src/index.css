@@ -1,0 +1,1083 @@
+/* Design-Tokens — konsistent mit SetupHub */
+:root {
+  --bg: #060709;
+  --surface: #0d0f14;
+  --surface-2: #12151c;
+  --border: #1e232d;
+  --text: #e8eaf0;
+  --text-dim: #8a91a0;
+  --accent: #00e5ff;
+  --danger: #ff5c5c;
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  touch-action: manipulation; /* Kein Doppeltipp-Zoom auf Buttons */
+}
+
+/* ---------- Grund-Layout: Sidebar + Bühne ---------- */
+
+.app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; /* Mobile: dynamische Viewport-Höhe */
+}
+
+.buehne {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.buehne canvas {
+  display: block;
+}
+
+/* ---------- Sidebar (App-Ebene) ---------- */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(300px, 84vw);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sidebar.offen {
+  transform: translateX(0);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.sidebar-backdrop.sichtbar {
+  opacity: 1;
+  visibility: visible;
+}
+
+.sidebar-oeffner {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.sidebar-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-titel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-titel > span:first-child {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.sidebar-titel em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.sidebar-version {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.sidebar-schliessen {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sidebar-sektion {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-sektion h2 {
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sektion-hinweis {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.stat-zeile {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.stat-zeile strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.stat-nebenwert {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sidebar-fuss {
+  margin-top: auto;
+  border-bottom: none;
+}
+
+/* Ab Tablet-Breite: Sidebar permanent, kein Drawer */
+@media (min-width: 768px) {
+  .sidebar {
+    position: static;
+    z-index: auto;
+    width: 280px;
+    flex-shrink: 0;
+    transform: none;
+  }
+
+  .sidebar-oeffner,
+  .sidebar-backdrop,
+  .sidebar-schliessen {
+    display: none;
+  }
+}
+
+/* ---------- Segment-Umschalter (Sidebar) ---------- */
+
+.segment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.segment button {
+  flex: 1;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.segment button.aktiv {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: var(--accent);
+}
+
+/* ---------- Hilfe-Texte je Eingabegerät ---------- */
+
+.info-hilfe {
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--text-dim);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hilfe-touch {
+    display: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .hilfe-maus {
+    display: none;
+  }
+}
+
+kbd {
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+.btn-leeren {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-leeren:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+/* ---------- Bottombar-Stack (Editier-Ebene) ---------- */
+
+.unten-stack {
+  position: absolute;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(620px, calc(100% - 16px));
+}
+
+.bottombar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.modus-toggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.modus-btn {
+  min-height: 40px; /* Touch-Ziel */
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.modus-btn.aktiv {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.modus-btn.abbau.aktiv {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: var(--danger);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.hotbar-slots {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hotbar-slots::-webkit-scrollbar {
+  display: none;
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  width: 50px;
+  padding: 6px 2px;
+  font: inherit;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.slot:hover {
+  background: var(--surface-2);
+}
+
+.slot.aktiv {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.slot-taste {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.slot-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.block-kachel {
+  display: inline-block;
+  background-size: cover;
+  image-rendering: pixelated;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+}
+
+.block-kachel.leuchtet {
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.btn-anpassen {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.btn-anpassen:hover {
+  color: var(--text);
+}
+
+.btn-anpassen.aktiv {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- Block-Picker (Hotbar anpassen) ---------- */
+
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.picker {
+  width: 100%;
+  padding: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+}
+
+.picker-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.picker-zaehler {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.picker-schliessen {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.picker-raster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 6px;
+  max-height: min(42dvh, 320px);
+  overflow-y: auto;
+}
+
+.picker-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 4px;
+  font: inherit;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.picker-block.aktiv {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.picker-block-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.picker-slotnr {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 15px;
+  padding: 1px 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+}
+
+.picker-hinweis {
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ---------- Hinweis bei leerer Welt ---------- */
+
+.leer-hinweis {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* ---------- Mobile-Feinschliff ---------- */
+
+@media (max-width: 480px) {
+  .modus-text {
+    display: none; /* Nur +/− Symbole, spart Platz für die 8 Slots */
+  }
+
+  .modus-btn {
+    min-width: 40px;
+    font-size: 16px;
+  }
+
+  .slot {
+    width: 42px;
+  }
+
+  .slot-label {
+    display: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .slot-taste {
+    display: none; /* Zifferntasten sind auf Touch irrelevant */
+  }
+}
+
+/* ---------- Build-Verwaltung (Sidebar) ---------- */
+
+.build-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.build-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.build-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.build-item.aktiv {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.build-item-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.build-item-name {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.build-item-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.build-item-btn {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.build-item-btn:hover {
+  color: var(--text);
+}
+
+.build-item-btn.gefahr:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-reihe {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-sekundaer {
+  flex: 1;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-sekundaer:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.btn-block {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.datei-versteckt {
+  display: none;
+}
+
+/* ---------- Layer-Slice ---------- */
+
+.slice-slider {
+  width: 100%;
+  margin-top: 12px;
+  accent-color: var(--accent);
+}
+
+.slice-chip {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.slice-chip span {
+  min-width: 48px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  text-align: center;
+}
+
+.slice-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.slice-chip button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.slice-chip button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---------- Hotbar-Konfigurator (Picker-Erweiterungen) ---------- */
+
+.picker-minihotbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.picker-minihotbar::-webkit-scrollbar {
+  display: none;
+}
+
+.mini-slot {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.mini-slot.gewaehlt {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.mini-slot-nr {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.stepper button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.stepper span {
+  min-width: 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  text-align: center;
+}
+
+/* ---------- Build-Thumbnails ---------- */
+
+.build-thumb {
+  flex-shrink: 0;
+  width: 42px;
+  height: 32px;
+  object-fit: cover;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.build-thumb.platzhalter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+
+/* ---------- Undo/Redo ---------- */
+
+.undo-gruppe {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.undo-gruppe button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-height: 40px;
+  font-size: 16px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.undo-gruppe button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.undo-gruppe button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ---------- Werkzeug: Markieren ---------- */
+
+.modus-btn.markier {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.modus-btn.markier.aktiv {
+  color: var(--text);
+  background: color-mix(in srgb, #ffc857 10%, transparent);
+  border-color: #ffc857;
+  box-shadow: 0 0 14px color-mix(in srgb, #ffc857 30%, transparent);
+}
+
+.markier-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid color-mix(in srgb, #ffc857 35%, var(--border));
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.markier-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.markier-status.mono {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.markier-aktionen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.markier-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.markier-btn:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, #ffc857 45%, var(--border));
+}
+
+.markier-btn.gefahr:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ---------- Chips oben rechts (Ansicht + Slice) ---------- */
+
+.chips-oben {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chips-oben .slice-chip {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.ansicht-chip {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-radius: 10px;
+}
+
+.ansicht-chip button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+/* ---------- Markier-Art (Box/Frei) ---------- */
+
+.markier-art {
+  flex-shrink: 0;
+  padding: 3px;
+}
+
+.markier-art button {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.markier-art button.aktiv {
+  background: color-mix(in srgb, #ffc857 10%, transparent);
+  border-color: #ffc857;
+}
+
+/* ---------- Picker-Suche + Segment-Abstand (v0.8) ---------- */
+
+.picker-suche {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.picker-suche:focus {
+  border-color: var(--accent);
+}
+
+.picker-suche::placeholder {
+  color: var(--text-dim);
+}
+
+.segment-abstand {
+  margin-top: 10px;
+}
+
+/* ---------- Picker-Filterzeile (Suche + Kategorie, v0.10) ---------- */
+
+.picker-filter {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.picker-filter .picker-suche {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-kategorie {
+  flex-shrink: 0;
+  max-width: 40%;
+  padding: 9px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.picker-kategorie:focus {
+  border-color: var(--accent);
+}

@@ -1,0 +1,43 @@
+# Netlify-Deploy-Konfiguration — VoxelEditor (Vite-PWA)
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA-Fallback: alle Pfade auf die App (hash-los, ein Einstiegspunkt)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Service Worker darf NIE gecacht werden — sonst hängen Nutzer auf alten Versionen fest
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Content-Type = "application/manifest+json"
+
+# Vite-Assets tragen Content-Hashes im Namen → für immer cachebar
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Texturen und Icons: lange cachen, aber revalidierbar (Dateinamen sind stabil)
+[[headers]]
+  for = "/texturen/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
